@@ -8,11 +8,12 @@ import base64
 import subprocess
 import eyed3
 from Crypto.Cipher import AES
+import glog
 
 class NemAPI:
 #    用途：本API用于和网易云音乐进行通信
 #    方法：get_info_from_nem()是通用方法
-#        get_play_list() get_play_list_info() get_music_url() 则是具体实现 
+#        get_play_list() get_play_list_info() get_music_url() 则是具体实现
 
     #   _aes_encrypt() _rsa_encrypt() _create_secret_key()
     #   这三个函数是用于加密传递给网易云音乐的参数的
@@ -78,7 +79,7 @@ class NemAPI:
             'uid': str(uid)
         }
         return self.get_info_from_nem(url,params)
-        
+
     def get_play_list_info(self,music_list_id):
     #   用途：获取指定播放列表的所有歌曲
     #   参数：music_list_id str|int 要获取的播放列表的id
@@ -87,7 +88,7 @@ class NemAPI:
         url = 'http://music.163.com/weapi/playlist/detail?csrf_token='
         params = {'id': str(music_list_id)}
         return self.get_info_from_nem(url,params)
-        
+
     def get_music_url(self,music_id):
     #   用途：获取指定歌曲的url下载链接，不过有时间限制，大概5-10分钟后失效
     #   参数：music_id str|int 要获取下载链接的歌曲id
@@ -115,19 +116,20 @@ class NemAutoDownloader:
 #    依赖：os, subprocess, eyed3
 
     user_id = '126887679' #我的用户ID
-    music_dir = '/home/gaoyuan/Music'
+    music_dir = u'/mnt/MainPool/Documents/Music'
     nem_api = NemAPI()
-    
+
     def __init__(self,userid='',music_dir=''):
         if not userid == '':
             self.userid = userid
         if not music_dir == '':
             self.music_dir = music_dir
-
+        if not os.path.isdir(self.music_dir):
+            exit("music dir (%s) not found"%self.music_dir)
     def get_play_list(self,user_id):
     #   用途：获取指定用户（user_id）创建的播放列表，不含收藏的
     #   参数：user_id str/int
-    #   返回：list [list_id,list_id,...] 
+    #   返回：list [list_id,list_id,...]
 
         play_list_id = []
         json = self.nem_api.get_play_list(user_id)
@@ -135,7 +137,7 @@ class NemAutoDownloader:
             if play_list['userId'] == int(user_id):
                 play_list_id.append(play_list['id'])
         return play_list_id
-        
+
     def get_song_list(self,play_list):
     #   用途：获取指定播放列表（play_list）中的歌曲
     #   参数：play_list list [list_id,list_id,...]
@@ -150,20 +152,20 @@ class NemAutoDownloader:
                     singers.append(singer['name'])
                 song_list.append({'name':track['name'],'id':track['id'],'singer':'&'.join(singers)})
         return song_list
-        
+
     # -2-
-    def get_local_song_list(self): 
+    def get_local_song_list(self):
     #   用途：获取本地（music_dir）歌曲列表
     #   参数：music_dir str 本地目录
     #   返回：list [song1,song2,...]
 
         local_song_list = []
-        for lists in os.listdir(self.music_dir): 
-            path = os.path.join(self.music_dir, lists) 
-            if not os.path.isdir(path): 
+        for lists in os.listdir(self.music_dir):
+            path = os.path.join(self.music_dir, lists)
+            if not os.path.isdir(path):
                 local_song_list.append(lists.split(".")[0])
         return local_song_list
-        
+
     # -3-
     def get_download_list(self,local_music_list,song_list):
     #   用途：使用网络列表（song_list）减去本地列表（local_music_list）以确定要下载的列表
@@ -175,7 +177,7 @@ class NemAutoDownloader:
             if not str(song_id['id']) in local_music_list:
                 download_list.append(song_id)
         return download_list
-        
+
     def get_song_url_list(self,song_list):
     #   用途：将歌曲id转换为下载链接，注意下载链接有时间限制，约为5～10分钟
     #   参数：song_list list
@@ -189,7 +191,7 @@ class NemAutoDownloader:
         for track in json:
             song_url_list.append({'id':track['id'],'url':track['url']})
         return song_url_list
-            
+
     # -4-
     def download_music(self,download_list):
     #   用途：下载音乐到指定目录（music_dir）
@@ -201,20 +203,20 @@ class NemAutoDownloader:
         total = len(download_list)
         for song in download_list:
             i = i + 1
-            print '    @+++>Downloading %s of %s...'%(str(i),str(total))
+            log.log('    @+++>Downloading %s of %s...'%(str(i),str(total)))
             if not song['url'] == None:
                 song_name = self.music_dir+'/'+str(song['id'])+song['url'][-4:]
                 state = subprocess.call('wget -O %s %s'%(song_name,song['url']),shell=True)
                 if not state == 0:
                     errors = errors + 1
-                    print '    @--->%Cannot download [%s] because of ...somgthing,delete broken music file'%(state,str(song['name']))
+                    log.log('    @--->%Cannot download [%s] because of ...somgthing,delete broken music file'%(state,str(song['name'])),1)
                     os.unlink(song_name)
-                    pass #此处应有‘下载失败的log’
+                    pass
             else:
-                print '    @--->Cannot download [%s] because of copyright'%(str(song['id']))
-                pass #此处应有‘此歌曲由于版权原因无法下载的log’
+                log.log('    @--->Cannot download [%s] because of copyright'%(str(song['id'])),1)
+                pass
         return errors
-        
+
     # -5-
     def change_mp3_tag(self,song_list):
     #   用途：修改下载的mp3文件的Tag
@@ -231,45 +233,45 @@ class NemAutoDownloader:
                     audiofile.tag.artist = song['singer']
                     audiofile.tag.save()
                     del audiofile
-                    print mp3,'<==>',song['name'],'<==>',song['singer']
+                    log.log('%s<==>%s<==>%s'%(str(song['id']),song['name'],song['singer']))
                 except:
-                    print '@--->An error occured while change the tag.Please re-run as fix mode(fix=True)'
+                    log.log('@--->An error occured while change %s tag.'%(str(song['id'])),1)
                     return False
         return True
 
     def auto_download(self,fix_mode=False):
     #   用途：主程序，自动下载收藏的歌曲
     #   参数：
-    #   返回： 
+    #   返回：
 
     #1
-        print '@+++>stage 1 =>getting online list'
+        log.log('@+++>stage 1 =>getting online list')
         play_list = self.get_play_list(self.user_id)
         song_list = self.get_song_list(play_list)
-        print '@--->stage 1 =>have %s list(s) and %s song(s) online'%(str(len(play_list)),str(len(song_list)))
+        log.log('@--->stage 1 =>have %s list(s) and %s song(s) online'%(str(len(play_list)),str(len(song_list))))
     #2
-        print '@+++>stage 2 =>getting local list'
+        log.log('@+++>stage 2 =>getting local list')
         local_music_list = self.get_local_song_list()
-        print '@--->stage 2 =>have %s song(s) at local'%(str(len(local_music_list)))
+        log.log('@--->stage 2 =>have %s song(s) at local'%(str(len(local_music_list))))
     #3
-        print '@+++>stage 3 =>making download list'
+        log.log('@+++>stage 3 =>making download list')
         song_to_down_list = self.get_download_list(local_music_list,song_list)
         download_list = self.get_song_url_list(song_to_down_list)
-        print '@--->stage 3 =>have %s song(s) to download'%(str(len(download_list)))
-    #4    
-        print '@+++>stage 4 =>starting download'
+        log.log('@--->stage 3 =>have %s song(s) to download'%(str(len(download_list))))
+    #4
+        log.log('@+++>stage 4 =>starting download')
         errors = self.download_music(download_list)
         if errors == 0:
-            print '@--->stage 4 =>finished download,no error'        
+            log.log('@--->stage 4 =>finished download,no error')
         else:
-            print '@--->stage 4 =>finished download, found %s errors,please re-run this script'%(errors)
+            log.log('@--->stage 4 =>finished download, found %s errors,please re-run this script'%(errors),1)
      #5
-        print '@+++>stage 5 =>write song title to mp3 tag'
+        log.log('@+++>stage 5 =>write song title to mp3 tag')
         if fix_mode:
             self.change_mp3_tag(song_list)
         else:
             self.change_mp3_tag(song_to_down_list)
-        print '@--->stage 5 =>ALL DONE !'       
+        log.log('@--->stage 5 =>ALL DONE !')
 
 
 
@@ -281,6 +283,7 @@ class NemAutoDownloader:
 
 
 if __name__=="__main__":
+    log = glog.glog("/mnt/MainPool/Documents/Music/nemDownloader")
     nem_auto_downloader = NemAutoDownloader()
     nem_auto_downloader.auto_download()
 
