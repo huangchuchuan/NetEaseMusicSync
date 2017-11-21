@@ -9,11 +9,15 @@ import subprocess
 import eyed3
 from Crypto.Cipher import AES
 import glog
+import hashlib
 
 class NemAPI:
 #    用途：本API用于和网易云音乐进行通信
 #    方法：get_info_from_nem()是通用方法
 #        get_play_list() get_play_list_info() get_music_url() 则是具体实现
+
+    def __init__(self):
+        self.session = requests.session()
 
     #   _aes_encrypt() _rsa_encrypt() _create_secret_key()
     #   这三个函数是用于加密传递给网易云音乐的参数的
@@ -63,7 +67,7 @@ class NemAPI:
             'params': enc_text,
             'encSecKey': enc_sec_key
         }
-        req = requests.post(url, headers=headers, data=data)
+        req = self.session.post(url, headers=headers, data=data)  # 改用session记录cookies，可用于获取个人信息/每日推荐等敏感信息
         return req.json()
 
     def get_play_list(self,uid):
@@ -102,6 +106,32 @@ class NemAPI:
             "br": '320000'
         }
         return self.get_info_from_nem(url,params)
+
+    def cellphone_login(self, phone_number, password):
+        """
+        网易云音乐手机号登录
+        :param string phone_number: 手机号
+        :param string password: 密码
+        :return: json对象
+        """
+        url = 'http://music.163.com/weapi/login/cellphone?csrf_token='
+        data = {'phone': phone_number, 'password': hashlib.md5(password).hexdigest(),
+                'rememberLogin': "true"}
+        return self.get_info_from_nem(url, data)
+
+    def get_daily_recommend(self):
+        """
+        获取网易云音乐每日推荐
+        :return: json对象
+        """
+        url = 'http://music.163.com/weapi/v2/discovery/recommend/songs?csrf_token='
+        data = {
+            'csrf_token': '',
+            'limit': '999',
+            'offset': '0',
+            'total': 'true'
+        }
+        return self.get_info_from_nem(url, data)
 
 
 class NemAutoDownloader:
